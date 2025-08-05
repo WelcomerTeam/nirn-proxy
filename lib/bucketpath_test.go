@@ -32,7 +32,7 @@ func TestPaths(t *testing.T) {
 		// No known major
 		{"/api/v9/invalid/203039963636301824", "GET", "/invalid/203039963636301824"},
 		{"/api/v9/invalid/203039963636301824/route/203039963636301824", "GET", "/invalid/203039963636301824/route/!"},
-		//Special case for /guilds/:id/channels
+		// Special case for /guilds/:id/channels
 		{"/api/v9/guilds/203039963636301824/channels", "GET", "/guilds/!/channels"},
 		// Weird routes
 		{"/api/v9/guilds/templates/203039963636301824", "GET", "/guilds/templates/!"},

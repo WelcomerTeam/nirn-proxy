@@ -2,6 +2,7 @@ package lib
 
 import (
 	"encoding/base64"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -64,7 +65,7 @@ func GetMetricsPath(route string) string {
 	}
 
 	if !utf8.ValidString(path) {
-		logger.Warn("Non utf-8 path detected, Prometheus only supports utf-8, invalid runes will be replaced with @ in metrics. Path: " + path)
+		slog.Warn("Non utf-8 path detected, Prometheus only supports utf-8, invalid runes will be replaced with @ in metrics.", "Path", path)
 		path = strings.ToValidUTF8(path, "@")
 	}
 
@@ -167,10 +168,10 @@ func GetOptimisticBucketPath(url string, method string) string {
 					bucket.WriteString("/reactions/!modify")
 					break
 				}
-				//All other reaction endpoints falls under the same bucket, so it's irrelevant if the user
-				//is passing userid, emoji, etc.
+				// All other reaction endpoints falls under the same bucket, so it's irrelevant if the user
+				// is passing userid, emoji, etc.
 				bucket.WriteString("/reactions/!/!")
-				//Reactions can only be followed by emoji/userid combo, since we don't care, break
+				//  Reactions can only be followed by emoji/userid combo, since we don't care, break
 				break
 			}
 

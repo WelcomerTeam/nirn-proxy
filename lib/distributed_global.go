@@ -8,9 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"github.com/Clever/leakybucket"
 	"github.com/Clever/leakybucket/memory"
-	"github.com/sirupsen/logrus"
 )
 
 type ClusterGlobalRateLimiter struct {
@@ -33,10 +34,13 @@ takeGlobal:
 	_, err := bucket.Add(1)
 	if err != nil {
 		reset := bucket.Reset()
-		logger.WithFields(logrus.Fields{
-			"waitTime": time.Until(reset),
-		}).Trace("Failed to grab global token, sleeping for a bit")
+
+		slog.Debug("Failed to grab global token, sleeping for a bit",
+			"waitTime", time.Until(reset),
+		)
+
 		time.Sleep(time.Until(reset))
+
 		goto takeGlobal
 	}
 }
@@ -79,7 +83,7 @@ func (c *ClusterGlobalRateLimiter) FireGlobalRequest(ctx context.Context, addr s
 	// The node handling the request will only return if we grabbed a token or an error was thrown
 	resp, err := client.Do(globalReq)
 
-	logger.Trace("Got go-ahead for global")
+	slog.Debug("Got go-ahead for global")
 
 	if err != nil {
 		return err

@@ -1,9 +1,11 @@
 package lib
 
 import (
-	"github.com/hashicorp/memberlist"
+	"log/slog"
 	"os"
 	"time"
+
+	"github.com/hashicorp/memberlist"
 )
 
 func InitMemberList(knownMembers []string, port int, proxyPort string, manager *QueueManager) *memberlist.Memberlist {
@@ -16,7 +18,7 @@ func InitMemberList(knownMembers []string, port int, proxyPort string, manager *
 
 	config.Events = manager.GetEventDelegate()
 
-	//DEBUG CODE
+	// DEBUG CODE
 	if os.Getenv("NODE_NAME") != "" {
 		config.Name = os.Getenv("NODE_NAME")
 		config.DeadNodeReclaimTime = 1 * time.Nanosecond
@@ -31,8 +33,7 @@ func InitMemberList(knownMembers []string, port int, proxyPort string, manager *
 
 	_, err = list.Join(knownMembers)
 	if err != nil {
-		logger.Info("Failed to join existing cluster, ok if this is the first node")
-		logger.Error(err)
+		slog.Error("Failed to join existing cluster, ok if this is the first node", "error", err)
 	}
 
 	var members string
@@ -40,6 +41,6 @@ func InitMemberList(knownMembers []string, port int, proxyPort string, manager *
 		members += member.Name + " "
 	}
 
-	logger.Info("Connected to cluster nodes: [ " + members + "]")
+	slog.Info("Connected to cluster nodes", "members", members)
 	return list
 }

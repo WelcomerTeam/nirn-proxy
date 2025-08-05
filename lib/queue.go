@@ -10,9 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"log/slog"
+
 	"github.com/Clever/leakybucket"
 	"github.com/Clever/leakybucket/memory"
-	"github.com/sirupsen/logrus"
 )
 
 type QueueItem struct {
@@ -104,11 +105,19 @@ func NewRequestQueue(processor func(ctx context.Context, item *QueueItem) (*http
 	}
 
 	if queueType != Bearer {
-		logger.WithFields(logrus.Fields{"globalLimit": limit, "identifier": identifier, "bufferSize": bufferSize}).Info("Created new queue")
+		slog.Info("Created new queue",
+			"globalLimit", limit,
+			"identifier", identifier,
+			"bufferSize", bufferSize,
+		)
 		// Only sweep bot queues, bearer queues get completely destroyed and hold way less endpoints
 		go ret.tickSweep()
 	} else {
-		logger.WithFields(logrus.Fields{"globalLimit": limit, "identifier": identifier, "bufferSize": bufferSize}).Debug("Created new bearer queue")
+		slog.Debug("Created new bearer queue",
+			"globalLimit", limit,
+			"identifier", identifier,
+			"bufferSize", bufferSize,
+		)
 	}
 
 	return ret, nil
@@ -117,7 +126,9 @@ func NewRequestQueue(processor func(ctx context.Context, item *QueueItem) (*http
 func (q *RequestQueue) destroy() {
 	q.Lock()
 	defer q.Unlock()
-	logger.Debug("Destroying queue")
+
+	slog.Debug("Destroying queues")
+
 	for _, val := range q.queues {
 		close(val.ch)
 	}
@@ -126,7 +137,9 @@ func (q *RequestQueue) destroy() {
 func (q *RequestQueue) sweep() {
 	q.Lock()
 	defer q.Unlock()
-	logger.Info("Sweep start")
+
+	slog.Info("Sweeping queues")
+
 	sweptEntries := 0
 	for key, val := range q.queues {
 		if time.Since(val.lastUsed) > 10*time.Minute {
@@ -135,7 +148,8 @@ func (q *RequestQueue) sweep() {
 			sweptEntries++
 		}
 	}
-	logger.WithFields(logrus.Fields{"sweptEntries": sweptEntries}).Info("Finished sweep")
+
+	slog.Info("Finished sweep", "sweptEntries", sweptEntries)
 }
 
 func (q *RequestQueue) tickSweep() {
@@ -158,11 +172,11 @@ func safeSend(queue *QueueChannel, value *QueueItem) {
 }
 
 func (q *RequestQueue) Queue(req *http.Request, res *http.ResponseWriter, path string, pathHash uint64) error {
-	logger.WithFields(logrus.Fields{
-		"bucket": path,
-		"path":   req.URL.Path,
-		"method": req.Method,
-	}).Trace("Inbound request")
+	slog.Debug("Inbound request",
+		"bucket", path,
+		"path", req.URL.Path,
+		"method", req.Method,
+	)
 
 	ch := q.getQueueChannel(path, pathHash)
 
@@ -287,7 +301,7 @@ func (q *RequestQueue) subscribe(ch *QueueChannel, path string, pathHash uint64)
 	// This function has 1 goroutine for each bucket path
 	// Locking here is not needed
 
-	//Only used for logging
+	// Only used for logging
 	var prevRem int64 = 0
 	var prevReset time.Duration = 0
 
@@ -316,13 +330,13 @@ func (q *RequestQueue) subscribe(ch *QueueChannel, path string, pathHash uint64)
 		_, remaining, resetAfter, isGlobal, err := parseHeaders(&resp.Header, scope != "user")
 
 		if isGlobal {
-			//Lock global
+			// Lock global
 			sw := atomic.CompareAndSwapInt64(q.globalLockedUntil, 0, time.Now().Add(resetAfter).UnixNano())
 			if sw {
-				logger.WithFields(logrus.Fields{
-					"until":      time.Now().Add(resetAfter),
-					"resetAfter": resetAfter,
-				}).Warn("Global reached, locking")
+				slog.Warn("Global reached, locking",
+					"until", time.Now().Add(resetAfter),
+					"resetAfter", resetAfter,
+				)
 			}
 		}
 
@@ -333,40 +347,43 @@ func (q *RequestQueue) subscribe(ch *QueueChannel, path string, pathHash uint64)
 		item.doneChan <- resp
 
 		if resp.StatusCode == 429 && scope != "shared" {
-			logger.WithFields(logrus.Fields{
-				"prevRemaining":  prevRem,
-				"prevResetAfter": prevReset,
-				"remaining":      remaining,
-				"resetAfter":     resetAfter,
-				"bucket":         path,
-				"route":          item.Req.URL.String(),
-				"method":         item.Req.Method,
-				"isGlobal":       isGlobal,
-				"pathHash":       pathHash,
+			slog.Warn("Unexpected 429",
+				"prevRemaining", prevRem,
+				"prevResetAfter", prevReset,
+				"remaining", remaining,
+				"resetAfter", resetAfter,
+				"bucket", path,
+				"route", item.Req.URL.String(),
+				"method", item.Req.Method,
+				"isGlobal", isGlobal,
+				"pathHash", pathHash,
 				// TODO: Remove this when 429s are not a problem anymore
-				"discordBucket":  resp.Header.Get("x-ratelimit-bucket"),
-				"ratelimitScope": resp.Header.Get("x-ratelimit-scope"),
-			}).Warn("Unexpected 429")
+				"discordBucket", resp.Header.Get("X-Ratelimit-Bucket"),
+				"ratelimitScope", resp.Header.Get("X-Ratelimit-Scope"),
+			)
+
 		}
 
 		if resp.StatusCode == 404 && strings.HasPrefix(path, "/webhooks/") && !isInteraction(item.Req.URL.String()) {
-			logger.WithFields(logrus.Fields{
-				"bucket": path,
-				"route":  item.Req.URL.String(),
-				"method": item.Req.Method,
-			}).Info("Setting fail fast 404 for webhook")
+			slog.Info("Setting fail fast 404 for webhook",
+				"bucket", path,
+				"route", item.Req.URL.String(),
+				"method", item.Req.Method,
+			)
+
 			ret404 = true
 		}
 
 		if resp.StatusCode == 401 && !isInteraction(item.Req.URL.String()) && q.queueType != NoAuth {
 			// Permanently lock this queue
-			logger.WithFields(logrus.Fields{
-				"bucket":     path,
-				"route":      item.Req.URL.String(),
-				"method":     item.Req.Method,
-				"identifier": q.identifier,
-				"status":     resp.StatusCode,
-			}).Error("Received 401 during normal operation, assuming token is invalidated, locking bucket permanently")
+
+			slog.Error("Received 401 during normal operation, assuming token is invalidated, locking bucket permanently",
+				"bucket", path,
+				"route", item.Req.URL.String(),
+				"method", item.Req.Method,
+				"identifier", q.identifier,
+				"status", resp.StatusCode,
+			)
 
 			if EnvGet("DISABLE_401_LOCK", "false") != "true" {
 				atomic.StoreInt64(q.isTokenInvalid, 999)

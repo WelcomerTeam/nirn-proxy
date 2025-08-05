@@ -10,9 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/hashicorp/memberlist"
-	"github.com/sirupsen/logrus"
 )
 
 type QueueType int64
@@ -75,7 +76,8 @@ func (m *QueueManager) Shutdown() {
 
 func (m *QueueManager) reindexMembers() {
 	if m.cluster == nil {
-		logger.Warn("reindexMembers called but cluster is nil")
+		slog.Warn("reindexMembers called but cluster is nil")
+
 		return
 	}
 
@@ -159,21 +161,26 @@ func (m *QueueManager) routeRequest(addr string, req *http.Request) (*http.Respo
 	nodeReq, err := http.NewRequestWithContext(req.Context(), req.Method, "http://"+addr+req.URL.Path+"?"+req.URL.RawQuery, req.Body)
 	nodeReq.Header = req.Header.Clone()
 	nodeReq.Header.Set("Nirn-Routed-To", addr)
+
 	if err != nil {
 		return nil, err
 	}
 
-	logger.WithFields(logrus.Fields{
-		"to":     addr,
-		"path":   req.URL.Path,
-		"method": req.Method,
-	}).Trace("Routing request to node in cluster")
+	slog.Debug("Routing request to node",
+		"to", addr,
+		"path", req.URL.Path,
+		"method", req.Method,
+	)
+
 	resp, err := client.Do(nodeReq)
-	logger.WithFields(logrus.Fields{
-		"to":     addr,
-		"path":   req.URL.Path,
-		"method": req.Method,
-	}).Trace("Received response from node")
+
+	slog.Debug("Received response from node",
+		"to", addr,
+		"path", req.URL.Path,
+		"method", req.Method,
+		"status", resp.Status,
+	)
+
 	if err == nil {
 		RequestsRoutedSent.Inc()
 	} else {
@@ -273,10 +280,12 @@ func (m *QueueManager) GetRequestRoutingInfo(req *http.Request, token string) (r
 }
 
 func (m *QueueManager) fulfillRequest(resp *http.ResponseWriter, req *http.Request, queueType QueueType, path string, pathHash uint64, token string, reqStart time.Time) {
-	logEntry := logger.WithField("clientIp", req.RemoteAddr)
+	args := make([]any, 0)
+
+	args = append(args, "clientIp", req.RemoteAddr)
 	forwdFor := req.Header.Get("X-Forwarded-For")
 	if forwdFor != "" {
-		logEntry = logEntry.WithField("forwardedFor", forwdFor)
+		args = append(args, "forwardedFor", forwdFor)
 	}
 	routeTo := m.calculateRoute(pathHash)
 
@@ -300,12 +309,18 @@ func (m *QueueManager) fulfillRequest(resp *http.ResponseWriter, req *http.Reque
 		if err != nil {
 			if strings.HasPrefix(err.Error(), "429") {
 				Generate429(resp)
-				logEntry.WithFields(logrus.Fields{"function": "getOrCreateQueue", "queueType": queueType}).Warn(err)
+				slog.Warn("Failed to get or create queue, sending 429",
+					"error", err,
+					"queueType", queueType,
+				)
 			} else {
 				(*resp).WriteHeader(500)
 				(*resp).Write([]byte(err.Error()))
 				ErrorCounter.Inc()
-				logEntry.WithFields(logrus.Fields{"function": "getOrCreateQueue", "queueType": queueType}).Error(err)
+				slog.Error("Failed to get or create queue",
+					"error", err,
+					"queueType", queueType,
+				)
 			}
 			return
 		}
@@ -324,7 +339,9 @@ func (m *QueueManager) fulfillRequest(resp *http.ResponseWriter, req *http.Reque
 			} else {
 				err = m.clusterGlobalRateLimiter.FireGlobalRequest(req.Context(), globalRouteTo, botHash, botLimit)
 				if err != nil {
-					logEntry.WithField("function", "FireGlobalRequest").Error(err)
+					args = append(args, "function", "FireGlobalRequest")
+					slog.Error(err.Error(), args...)
+
 					ErrorCounter.Inc()
 					Generate429(resp)
 					return
@@ -333,11 +350,12 @@ func (m *QueueManager) fulfillRequest(resp *http.ResponseWriter, req *http.Reque
 		}
 		err = q.Queue(req, resp, path, pathHash)
 		if err != nil {
-			log := logEntry.WithField("function", "Queue")
+			args = append(args, "function", "Queue")
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				log.WithField("waitedFor", time.Since(reqStart)).Warn(err)
+				args = append(args, "waitedFor", time.Since(reqStart).String())
+				slog.Warn(err.Error(), args...)
 			} else {
-				log.Error(err)
+				slog.Error(err.Error(), args...)
 			}
 		}
 	} else {
@@ -346,14 +364,16 @@ func (m *QueueManager) fulfillRequest(resp *http.ResponseWriter, req *http.Reque
 		if err == nil {
 			err = CopyResponseToResponseWriter(res, resp)
 			if err != nil {
-				logEntry.WithField("function", "CopyResponseToResponseWriter").Error(err)
+				args = append(args, "function", "CopyResponseToResponseWriter")
+				slog.Error(err.Error(), args...)
 			}
 		} else {
-			logEntry = logEntry.WithField("function", "routeRequest")
+			args = append(args, "function", "routeRequest")
+
 			if !errors.Is(err, context.Canceled) {
-				logEntry.Error(err)
+				slog.Error(err.Error(), args...)
 			} else {
-				logEntry.Warn(err)
+				slog.Warn(err.Error(), args...)
 			}
 			// if it's a context canceled on the client it won't get the 429 anyway, if it's within the cluster we should retry
 			Generate429(resp)
@@ -378,7 +398,8 @@ func (m *QueueManager) HandleGlobal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.clusterGlobalRateLimiter.Take(botHash, uint(botLimit))
-	logger.Trace("Returned OK for global request")
+
+	slog.Error("Returned OK for global request")
 }
 
 func (m *QueueManager) CreateMux() *http.ServeMux {

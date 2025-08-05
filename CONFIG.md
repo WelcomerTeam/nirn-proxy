@@ -2,7 +2,7 @@
 All variables are optional unless stated otherwise
 
 ##### LOG_LEVEL
-Logrus log level. Passed directly to [ParseLevel](https://github.com/sirupsen/logrus/blob/master/logrus.go#L25-L45)
+slog log level. Passed directly to [ParseLevel](https://pkg.go.dev/log/slog#Level)
 
 ##### PORT
 The port to listen for requests on

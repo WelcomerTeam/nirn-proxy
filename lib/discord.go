@@ -6,14 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"math"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/sirupsen/logrus"
+	"time"
 )
 
 var DiscordURL = "https://discord.com"
@@ -270,13 +270,12 @@ func ProcessRequest(ctx context.Context, item *QueueItem) (*http.Response, error
 		return nil, err
 	}
 
-	logger.WithFields(logrus.Fields{
-		"method": req.Method,
-		"path":   req.URL.String(),
-		"status": discordResp.Status,
-		// TODO: Remove this when 429s are not a problem anymore
-		"discordBucket": discordResp.Header.Get("X-Ratelimit-Bucket"),
-	}).Debug("Discord request")
+	slog.Debug("Discord request processed",
+		"method", req.Method,
+		"path", req.URL.String(),
+		"status", discordResp.Status,
+		"discordBucket", discordResp.Header.Get("X-Ratelimit-Bucket"),
+	)
 
 	err = CopyResponseToResponseWriter(discordResp, item.Res)
 

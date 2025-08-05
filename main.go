@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -14,24 +16,35 @@ import (
 	"github.com/germanoeich/nirn-proxy/lib"
 	"github.com/hashicorp/memberlist"
 	_ "github.com/joho/godotenv/autoload"
-	"github.com/sirupsen/logrus"
 )
-
-var logger = logrus.New()
 
 // token : queue map
 var bufferSize = 50
 
+func parseLevel(level string) (slog.Level, error) {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "warn":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelInfo, errors.New("invalid log level: " + level)
+	}
+}
+
 func setupLogger() {
 	logLevel := lib.EnvGet("LOG_LEVEL", "info")
-	lvl, err := logrus.ParseLevel(logLevel)
+	lvl, err := parseLevel(logLevel)
 
 	if err != nil {
 		panic("Failed to parse log level")
 	}
 
-	logger.SetLevel(lvl)
-	lib.SetLogger(logger)
+	slog.SetLogLoggerLevel(lvl)
 }
 
 func initCluster(proxyPort string, manager *lib.QueueManager) *memberlist.Memberlist {
@@ -41,22 +54,25 @@ func initCluster(proxyPort string, manager *lib.QueueManager) *memberlist.Member
 	dns := os.Getenv("CLUSTER_DNS")
 
 	if memberEnv == "" && dns == "" {
-		logger.Info("Running in stand-alone mode")
+		slog.Info("Running in stand-alone mode")
 		return nil
 	}
 
-	logger.Info("Attempting to create/join cluster")
+	slog.Info("Attempting to create/join cluster")
+
 	var members []string
 	if memberEnv != "" {
 		members = strings.Split(memberEnv, ",")
 	} else {
 		ips, err := net.LookupIP(dns)
 		if err != nil {
-			logger.Panic(err)
+			slog.Error(err.Error(), "function", "net.LookupIP")
+			panic(err)
 		}
 
 		if len(ips) == 0 {
-			logger.Panic("no ips returned by dns")
+			slog.Error("No IPs returned by DNS lookup", "dns", dns)
+			panic("No IPs returned by DNS lookup")
 		}
 
 		for _, ip := range ips {
@@ -82,7 +98,8 @@ func main() {
 
 	discordURL := lib.EnvGet("DISCORD_URL", "https://discord.com")
 	if _, err := url.Parse(discordURL); err != nil {
-		logger.WithFields(logrus.Fields{"function": "url.Parse"}).Panic("Invalid DISCORD_URL: " + discordURL)
+		slog.Error("Invalid DISCORD_URL", "error", err)
+		panic("Invalid DISCORD_URL: " + discordURL)
 	}
 
 	lib.DiscordURL = discordURL
@@ -131,30 +148,31 @@ func main() {
 
 	go func() {
 		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.WithFields(logrus.Fields{"function": "http.ListenAndServe"}).Panic(err)
+			slog.Error(err.Error(), "function", "http.ListenAndServe")
+			panic(err)
 		}
 	}()
 
-	logger.Info("Started proxy on " + bindIp + ":" + port)
+	slog.Info("Started proxy on " + bindIp + ":" + port)
 
 	// Wait for the http server to ready before joining the cluster
 	<-time.After(1 * time.Second)
 	initCluster(port, manager)
 
 	<-done
-	logger.Info("Server received shutdown signal")
+	slog.Info("Server received shutdown signal")
 
-	logger.Info("Broadcasting leave message to cluster, if in cluster mode")
+	slog.Info("Broadcasting leave message to cluster, if in cluster mode")
 	manager.Shutdown()
 
-	logger.Info("Gracefully shutting down HTTP server")
+	slog.Info("Gracefully shutting down HTTP server")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	if err := s.Shutdown(ctx); err != nil {
-		logger.WithFields(logrus.Fields{"function": "http.Shutdown"}).Error(err)
+		slog.Error("Failed to gracefully shutdown HTTP server", "error", err)
 	}
 
-	logger.Info("Bye bye")
+	slog.Info("Bye bye")
 }
