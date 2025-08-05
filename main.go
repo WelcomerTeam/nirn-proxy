@@ -2,17 +2,19 @@ package main
 
 import (
 	"context"
-	"github.com/germanoeich/nirn-proxy/lib"
-	"github.com/hashicorp/memberlist"
-	_ "github.com/joho/godotenv/autoload"
-	"github.com/sirupsen/logrus"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/germanoeich/nirn-proxy/lib"
+	"github.com/hashicorp/memberlist"
+	_ "github.com/joho/godotenv/autoload"
+	"github.com/sirupsen/logrus"
 )
 
 var logger = logrus.New()
@@ -76,9 +78,25 @@ func main() {
 
 	disableGlobalRatelimitDetection := lib.EnvGetBool("DISABLE_GLOBAL_RATELIMIT_DETECTION", false)
 
-	lib.ConfigureDiscordHTTPClient(outboundIp, time.Duration(timeout)*time.Millisecond, disableHttp2, globalOverrides, disableGlobalRatelimitDetection)
+	// Add Discord URL override
+
+	discordURL := lib.EnvGet("DISCORD_URL", "https://discord.com")
+	if _, err := url.Parse(discordURL); err != nil {
+		logger.WithFields(logrus.Fields{"function": "url.Parse"}).Panic("Invalid DISCORD_URL: " + discordURL)
+	}
+
+	lib.DiscordURL = discordURL
+
+	lib.ConfigureDiscordHTTPClient(
+		outboundIp,
+		time.Duration(timeout)*time.Millisecond,
+		disableHttp2,
+		globalOverrides,
+		disableGlobalRatelimitDetection,
+	)
 
 	port := lib.EnvGet("PORT", "8080")
+
 	bindIp := lib.EnvGet("BIND_IP", "0.0.0.0")
 
 	setupLogger()

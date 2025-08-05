@@ -80,3 +80,6 @@ Collection of env vars that may be removed at any time, mainly used for Discord 
 
 ##### DISABLE_401_LOCK
 The proxy locks its queue permanently in case a 401 is encountered during normal operation. This env disables this mechanism but not the logging for it.
+
+#### DISCORD_URL
+The proxy sends all the requests to this URL. By default this will be https://discord.com but you can optionally target anything, such as https://canary.discord.com or https://discordapp.com
