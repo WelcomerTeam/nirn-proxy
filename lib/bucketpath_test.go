@@ -34,7 +34,7 @@ func TestPaths(t *testing.T) {
 		{"/api/v9/invalid/203039963636301824/route/203039963636301824", "GET", "/invalid/203039963636301824/route/!"},
 		//Special case for /guilds/:id/channels
 		{"/api/v9/guilds/203039963636301824/channels", "GET", "/guilds/!/channels"},
-		// Wierd routes
+		// Weird routes
 		{"/api/v9/guilds/templates/203039963636301824", "GET", "/guilds/templates/!"},
 		// Unversioned routes
 		{"/api/webhooks/203039963636301824/VSOzAqY1OZFF5WJVtbIzFtmjGupk-84Hn0A_ZzToF_CHsPIeCk0Q9Uok_mjxR0dNtApI", "POST", "/webhooks/203039963636301824/!"},

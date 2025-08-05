@@ -3,15 +3,16 @@ package lib
 import (
 	"context"
 	"errors"
-	lru "github.com/hashicorp/golang-lru"
-	"github.com/hashicorp/memberlist"
-	"github.com/sirupsen/logrus"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	lru "github.com/hashicorp/golang-lru"
+	"github.com/hashicorp/memberlist"
+	"github.com/sirupsen/logrus"
 )
 
 type QueueType int64
@@ -157,7 +158,7 @@ func (m *QueueManager) calculateRoute(pathHash uint64) string {
 func (m *QueueManager) routeRequest(addr string, req *http.Request) (*http.Response, error) {
 	nodeReq, err := http.NewRequestWithContext(req.Context(), req.Method, "http://"+addr+req.URL.Path+"?"+req.URL.RawQuery, req.Body)
 	nodeReq.Header = req.Header.Clone()
-	nodeReq.Header.Set("nirn-routed-to", addr)
+	nodeReq.Header.Set("Nirn-Routed-To", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -184,14 +185,14 @@ func (m *QueueManager) routeRequest(addr string, req *http.Request) (*http.Respo
 
 func Generate429(resp *http.ResponseWriter) {
 	writer := *resp
-	writer.Header().Set("generated-by-proxy", "true")
-	writer.Header().Set("x-ratelimit-scope", "user")
-	writer.Header().Set("x-ratelimit-limit", "1")
-	writer.Header().Set("x-ratelimit-remaining", "0")
-	writer.Header().Set("x-ratelimit-reset", strconv.FormatInt(time.Now().Add(1*time.Second).Unix(), 10))
-	writer.Header().Set("x-ratelimit-after", "1")
-	writer.Header().Set("retry-after", "1")
-	writer.Header().Set("content-type", "application/json")
+	writer.Header().Set("Generated-By-Proxy", "true")
+	writer.Header().Set("X-RateLimit-Scope", "user")
+	writer.Header().Set("X-RateLimit-Limit", "1")
+	writer.Header().Set("X-RateLimit-Remaining", "0")
+	writer.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(1*time.Second).Unix(), 10))
+	writer.Header().Set("X-RateLimit-After", "1")
+	writer.Header().Set("Retry-After", "1")
+	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(429)
 	writer.Write([]byte("{\n\t\"global\": false,\n\t\"message\": \"You are being rate limited.\",\n\t\"retry_after\": 1\n}"))
 }
@@ -312,7 +313,7 @@ func (m *QueueManager) fulfillRequest(resp *http.ResponseWriter, req *http.Reque
 		if q.identifier != "NoAuth" {
 			var botHash uint64 = 0
 			if q.user != nil {
-				botHash = HashCRC64(q.user.Id)
+				botHash = HashCRC64(q.user.ID)
 			}
 
 			botLimit := q.botLimit
@@ -361,8 +362,8 @@ func (m *QueueManager) fulfillRequest(resp *http.ResponseWriter, req *http.Reque
 }
 
 func (m *QueueManager) HandleGlobal(w http.ResponseWriter, r *http.Request) {
-	botHashStr := r.Header.Get("bot-hash")
-	botLimitStr := r.Header.Get("bot-limit")
+	botHashStr := r.Header.Get("Bot-Hash")
+	botLimitStr := r.Header.Get("Bot-Limit")
 
 	botHash, err := strconv.ParseUint(botHashStr, 10, 64)
 	if err != nil {

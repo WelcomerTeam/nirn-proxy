@@ -3,25 +3,26 @@ package lib
 import (
 	"context"
 	"errors"
-	"github.com/Clever/leakybucket"
-	"github.com/Clever/leakybucket/memory"
-	"github.com/sirupsen/logrus"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/Clever/leakybucket"
+	"github.com/Clever/leakybucket/memory"
+	"github.com/sirupsen/logrus"
 )
 
 type ClusterGlobalRateLimiter struct {
 	sync.RWMutex
 	globalBucketsMap map[uint64]*leakybucket.Bucket
-	memStorage *memory.Storage
+	memStorage       *memory.Storage
 }
 
 func NewClusterGlobalRateLimiter() *ClusterGlobalRateLimiter {
 	memStorage := memory.New()
 	return &ClusterGlobalRateLimiter{
-		memStorage: memStorage,
+		memStorage:       memStorage,
 		globalBucketsMap: make(map[uint64]*leakybucket.Bucket),
 	}
 }
@@ -44,36 +45,40 @@ func (c *ClusterGlobalRateLimiter) getOrCreate(botHash uint64, botLimit uint) *l
 	c.RLock()
 	b, ok := c.globalBucketsMap[botHash]
 	c.RUnlock()
+
 	if !ok {
 		c.Lock()
-		// Check if it wasn't created while we didnt hold the exclusive lock
+		// Check if it wasn't created while we didn't hold the exclusive lock
 		b, ok = c.globalBucketsMap[botHash]
 		if ok {
 			c.Unlock()
+
 			return b
 		}
 
-		globalBucket, _ := c.memStorage.Create(strconv.FormatUint(botHash, 10), botLimit, 1 * time.Second)
+		globalBucket, _ := c.memStorage.Create(strconv.FormatUint(botHash, 10), botLimit, 1*time.Second)
 		c.globalBucketsMap[botHash] = &globalBucket
+
 		c.Unlock()
+
 		return &globalBucket
 	} else {
 		return b
 	}
 }
 
-
 func (c *ClusterGlobalRateLimiter) FireGlobalRequest(ctx context.Context, addr string, botHash uint64, botLimit uint) error {
-	globalReq, err := http.NewRequestWithContext(ctx, "GET", "http://" + addr + "/nirn/global", nil)
+	globalReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+addr+"/nirn/global", nil)
 	if err != nil {
 		return err
 	}
 
-	globalReq.Header.Set("bot-hash", strconv.FormatUint(botHash, 10))
-	globalReq.Header.Set("bot-limit", strconv.FormatUint(uint64(botLimit), 10))
+	globalReq.Header.Set("Bot-Hash", strconv.FormatUint(botHash, 10))
+	globalReq.Header.Set("Bot-Limit", strconv.FormatUint(uint64(botLimit), 10))
 
 	// The node handling the request will only return if we grabbed a token or an error was thrown
 	resp, err := client.Do(globalReq)
+
 	logger.Trace("Got go-ahead for global")
 
 	if err != nil {

@@ -1,14 +1,15 @@
 package lib
 
 import (
-	"github.com/sirupsen/logrus"
 	"regexp"
+
+	"github.com/sirupsen/logrus"
 )
 
 type GlobalHook struct {
 }
 
-var loggerHookRegex = regexp.MustCompile("(\\/[0-9]{17,26}\\/)[a-zA-Z0-9\\-_]{63,}")
+var loggerHookRegex = regexp.MustCompile(`(\/[0-9]{17,26}\/)[a-zA-Z0-9\-_]{63,}`)
 
 func (h *GlobalHook) Levels() []logrus.Level {
 	return logrus.AllLevels
